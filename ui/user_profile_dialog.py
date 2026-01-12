@@ -61,7 +61,7 @@ class UserProfileDialog(Adw.PreferencesWindow):
 
         # Interests group
         group = Adw.PreferencesGroup()
-        group.set_title("Interests & Preferences")
+        group.set_title("Interests &amp; Preferences")
 
         # Interests
         self.interests_entry = Adw.EntryRow()
@@ -96,18 +96,21 @@ class UserProfileDialog(Adw.PreferencesWindow):
 
         page.add(group)
 
-        # Save button
-        save_button = Gtk.Button(label="Save Profile")
+        # Save button group
+        button_group = Adw.PreferencesGroup()
+
+        save_action_row = Adw.ActionRow()
+        save_action_row.set_title("Save your profile")
+
+        save_button = Gtk.Button(label="Save")
         save_button.add_css_class("suggested-action")
         save_button.connect("clicked", self._on_save_clicked)
 
-        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        button_box.set_margin_top(10)
-        button_box.set_margin_bottom(10)
-        button_box.set_halign(Gtk.Align.CENTER)
-        button_box.append(save_button)
+        save_action_row.add_suffix(save_button)
+        save_action_row.set_activatable_widget(save_button)
 
-        page.add(button_box)
+        button_group.add(save_action_row)
+        page.add(button_group)
 
         self.add(page)
 
@@ -151,10 +154,7 @@ class UserProfileDialog(Adw.PreferencesWindow):
         """Handle save button click."""
         saved_count = self._save_profile()
 
-        # Show toast notification
-        toast = Adw.Toast(title=f"Saved {saved_count} memories from your profile.")
-        self.toast_overlay.add_toast(toast)
-
+        # Show toast notification (will be shown by parent window)
         self.close()
 
     def _save_profile(self):
