@@ -1,0 +1,23 @@
+# GTK4/libadwaita Requirements
+# Note: System packages need to be installed via apt/dnf first
+
+# Python GTK4 bindings
+gi>=3.0.0
+gi-gtk>=3.0.0
+gi-adwaita>=3.0.0
+
+# AI Backend Providers
+openai>=1.0.0
+anthropic>=0.18.0
+groq>=0.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# SMS Integration
+twilio>=8.0.0
+flask>=3.0.0
+
+# Data Storage (usually pre-installed, but listing for completeness)
+# No extra packages needed - using standard library

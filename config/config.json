@@ -1,0 +1,12 @@
+{
+  "ai_backend": "custom",
+  "ollama_model": "mistral",
+  "ollama_url": "http://localhost:11434",
+  "api_key": "",
+  "api_url": "https://api.openai.com/v1",
+  "api_model": "gpt-3.5-turbo",
+  "sms_forwarding_enabled": false,
+  "auto_save_enabled": true,
+  "theme": "system",
+  "last_companion": null
+}
