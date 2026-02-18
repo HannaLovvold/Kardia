@@ -26,9 +26,8 @@ from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 from companion_data.models import CompanionManager, Companion
 from ai_backend import OllamaBackend
 from openai_backend import OpenAIBackend
-from sms_integration import TwilioIntegration, MessageForwarder
-from sms_webhook import SMSWebhookServer
-from sms_companion_manager import SMSCompanionManager, SMSCommandParser
+from api_server import APIServer
+from proactive_messenger import ProactiveMessageScheduler
 from storage import ConversationStorage, ConfigManager
 from memory import MemoryStore
 from memory_extractor import MemoryManager
@@ -75,19 +74,11 @@ class KardiaApp(Adw.Application):
         # Set current backend
         self.ai_backend = self._get_current_backend()
 
-        # Initialize SMS
-        self.sms_integration = TwilioIntegration()
-        self.message_forwarder = MessageForwarder(self.sms_integration)
+        # Initialize API Server
+        self.api_server = APIServer(self)
 
-        # Initialize SMS companion manager for multi-companion support
-        self.sms_companion_manager = SMSCompanionManager(self.project_dir / "conversations")
-        self.sms_command_parser = SMSCommandParser(
-            self.sms_companion_manager,
-            self.companion_manager
-        )
-
-        # Initialize SMS webhook server for incoming messages
-        self.webhook_server = SMSWebhookServer(message_callback=self._on_incoming_sms)
+        # Initialize Proactive Message Scheduler
+        self.proactive_scheduler = ProactiveMessageScheduler(self)
 
         # Initialize Memory
         self.memory_store = MemoryStore(self.project_dir)
@@ -96,131 +87,6 @@ class KardiaApp(Adw.Application):
         # Current companion and conversation
         self.current_companion = None
         self.current_conversation = None
-
-    def _on_incoming_sms(self, from_number: str, body: str, message_sid: str):
-        """
-        Handle incoming SMS message from webhook.
-
-        This is called from a background thread, so we use GLib.idle_add
-        to safely update the UI from the main thread.
-        """
-        print(f"📩 Processing incoming SMS from {from_number}: {body}")
-
-        # Check if this is a command
-        is_command, command_response, new_companion_id = self.sms_command_parser.parse_message(body, from_number)
-
-        if is_command:
-            # This is a command - send the response and don't process as conversation
-            print(f"📋 SMS Command detected: {body}")
-
-            # Send command response via SMS
-            if command_response:
-                self.sms_integration.send_message_async(command_response)
-
-            # If it was a switch command, the mapping is already updated
-            if new_companion_id:
-                print(f"✅ Switched to companion: {new_companion_id}")
-
-            return  # Don't process as regular message
-
-        # Not a command - process as regular conversation message
-        def process_sms():
-            # Get the companion ID for this phone number
-            companion_id = self.sms_companion_manager.get_companion_id(from_number)
-
-            # If no mapping exists, use the current companion from the app
-            if not companion_id:
-                if self.current_companion:
-                    companion_id = self.current_companion.id
-                    # Create a mapping for future messages
-                    self.sms_companion_manager.set_companion_id(
-                        from_number,
-                        self.current_companion.id,
-                        self.current_companion.name
-                    )
-                    print(f"📝 Mapped {from_number} to {self.current_companion.name}")
-                else:
-                    # No companion available
-                    error_msg = "⚠️ No companion selected. Please open the app and select a companion."
-                    self.sms_integration.send_message_async(error_msg)
-                    return
-
-            # Create or get the companion
-            companion = self.companion_manager.create_companion(companion_id)
-            if not companion:
-                error_msg = "❌ Companion not found. Text 'list' to see available companions."
-                self.sms_integration.send_message_async(error_msg)
-                return
-
-            # Update last interaction time
-            self.sms_companion_manager.update_last_interaction(from_number)
-
-            # Get or create conversation for this companion
-            conversation = self.storage.get_or_create_conversation(companion_id)
-
-            # Add user message to conversation
-            from datetime import datetime
-            timestamp = datetime.now().isoformat()
-            conversation.add_message("user", body, timestamp)
-
-            # Save conversation
-            if self.config.get("auto_save_enabled", True):
-                self.storage.save_conversation(conversation)
-
-            # Get context and system prompt
-            messages = conversation.get_context_messages()
-            system_prompt = companion.get_system_prompt()
-
-            # Add memory context
-            memory_context = self.memory_store.get_context_summary()
-            if memory_context and memory_context != "No information about the user yet.":
-                system_prompt += f"\n\nWhat you remember about the user:\n{memory_context}\n\nUse this information to personalize your responses and show you care."
-
-            print(f"🤖 Generating response from {companion.name}...")
-
-            # Generate AI response
-            def on_ai_response(response: str):
-                # Add assistant message
-                timestamp = datetime.now().isoformat()
-                conversation.add_message("assistant", response, timestamp)
-
-                # Save conversation
-                if self.config.get("auto_save_enabled", True):
-                    self.storage.save_conversation(conversation)
-
-                # Extract memories
-                try:
-                    # Create temporary memory manager for this companion
-                    from memory_extractor import MemoryManager
-                    temp_memory_manager = MemoryManager(self.ai_backend, self.memory_store)
-                    temp_memory_manager.process_conversation(
-                        conversation.get_context_messages(),
-                        companion.id,
-                    )
-                except Exception as e:
-                    print(f"Memory extraction error: {e}")
-
-                # Send response back via SMS
-                print(f"📤 Sending SMS response to {from_number}")
-                self.message_forwarder.send_companion_message_to_sms(response)
-
-                # Update UI if this companion is currently active in the app
-                def update_ui():
-                    win = self.props.active_window
-                    if win and hasattr(win, 'chat_view') and self.current_companion:
-                        if self.current_companion.id == companion_id:
-                            # Only update UI if this is the active companion
-                            win.chat_view.show_user_message(body)
-                            GLib.idle_add(lambda: win.chat_view.show_companion_message(response))
-                            GLib.idle_add(lambda: win.chat_view._scroll_to_bottom())
-
-                GLib.idle_add(update_ui)
-
-            # Generate response
-            self.ai_backend.generate_async(messages, system_prompt, on_ai_response)
-
-        # Run in main thread
-        GLib.idle_add(process_sms)
 
     def do_activate(self):
         """Activate the application (create window)."""
@@ -240,12 +106,11 @@ class KardiaApp(Adw.Application):
                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
 
-        # Start SMS webhook server
-        if self.sms_integration.is_configured():
-            self.webhook_server.start()
-            print("✅ SMS webhook server started - incoming SMS enabled")
-        else:
-            print("⚠️  SMS not configured - webhook server not started")
+        # Start API server
+        self.api_server.start()
+
+        # Start proactive message scheduler
+        self.proactive_scheduler.start()
 
         win.present()
 
@@ -321,7 +186,9 @@ class KardiaApp(Adw.Application):
 
         # Get context and system prompt
         messages = self.current_conversation.get_context_messages()
-        system_prompt = self.current_companion.get_system_prompt()
+        from datetime import datetime
+        current_dt = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+        system_prompt = self.current_companion.get_system_prompt(current_dt)
 
         # Add memory context to system prompt
         memory_context = self.memory_store.get_context_summary()
@@ -346,10 +213,6 @@ class KardiaApp(Adw.Application):
                 )
             except Exception as e:
                 print(f"Memory extraction error: {e}")
-
-            # Forward to SMS if enabled
-            if self.message_forwarder.should_forward_to_sms():
-                self.message_forwarder.send_companion_message_to_sms(response)
 
             callback(response)
 

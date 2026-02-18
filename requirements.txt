@@ -15,9 +15,9 @@ groq>=0.0.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 
-# SMS Integration
-twilio>=8.0.0
+# REST API Server
 flask>=3.0.0
+flask-cors>=4.0.0
 
 # Data Storage (usually pre-installed, but listing for completeness)
 # No extra packages needed - using standard library
