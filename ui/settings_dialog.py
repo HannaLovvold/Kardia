@@ -29,7 +29,7 @@ class SettingsDialog(Adw.PreferencesWindow):
 
         # Create pages
         self._create_ai_backend_page()
-        self._create_twilio_page()
+        self._create_api_page()
         self._create_memory_page()
 
     def _create_ai_backend_page(self):
@@ -164,155 +164,139 @@ class SettingsDialog(Adw.PreferencesWindow):
 
         self.add(page)
 
-    def _create_twilio_page(self):
-        """Create Twilio SMS settings page."""
+    def _create_api_page(self):
+        """Create REST API settings page."""
         page = Adw.PreferencesPage()
-        page.set_title("Twilio")
-        page.set_icon_name("sms-symbolic")
+        page.set_title("API Server")
+        page.set_icon_name("network-wired-symbolic")
 
         # Info group
         info_group = Adw.PreferencesGroup()
-        info_group.set_title("Twilio SMS Settings")
+        info_group.set_title("REST API Settings")
 
         info_label = Gtk.Label()
         info_label.set_markup(
-            "<small>Configure Twilio credentials in .env file:\n"
-            "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,\n"
-            "TWILIO_PHONE_NUMBER, USER_PHONE_NUMBER</small>"
+            "<small>Configure the REST API for external access.\n"
+            "Set API_BEARER_TOKEN and API_SERVER_PORT in .env file.\n\n"
+            "Use the API from your phone app or other clients.</small>"
         )
         info_label.set_halign(Gtk.Align.START)
         info_label.set_margin_start(10)
         info_label.set_margin_end(10)
         info_label.set_margin_top(10)
         info_label.set_margin_bottom(10)
+        info_label.set_wrap(True)
         info_group.add(info_label)
 
         page.add(info_group)
 
+        # Configuration group
+        config_group = Adw.PreferencesGroup()
+        config_group.set_title("Configuration")
+
+        # API Port row
+        api_port_row = Adw.EntryRow()
+        api_port_row.set_title("API Port")
+        api_port_row.set_text(str(self.app.config.get("api_server_port", 5000)))
+        api_port_row.connect("changed", self._on_api_port_changed)
+        config_group.add(api_port_row)
+
+        # API Token row (masked)
+        api_token_row = Adw.PasswordEntryRow()
+        api_token_row.set_title("API Bearer Token")
+        default_token = "kardia-api-key"
+        current_token = self.app.config.get("api_bearer_token", default_token)
+        api_token_row.set_text(current_token)
+        api_token_row.connect("changed", self._on_api_token_changed)
+        config_group.add(api_token_row)
+
+        page.add(config_group)
+
         # Status group
         status_group = Adw.PreferencesGroup()
-        status_group.set_title("Configuration Status")
+        status_group.set_title("Server Status")
 
-        self.twilio_status_label = Gtk.Label()
-        self.twilio_status_label.set_halign(Gtk.Align.START)
-        self.twilio_status_label.set_margin_start(10)
-        self.twilio_status_label.set_margin_end(10)
-        self.twilio_status_label.set_margin_top(10)
-        self.twilio_status_label.set_margin_bottom(10)
-        status_group.add(self.twilio_status_label)
+        self.api_status_label = Gtk.Label()
+        self.api_status_label.set_halign(Gtk.Align.START)
+        self.api_status_label.set_margin_start(10)
+        self.api_status_label.set_margin_end(10)
+        self.api_status_label.set_margin_top(10)
+        self.api_status_label.set_margin_bottom(10)
+        status_group.add(self.api_status_label)
 
-        test_button = Gtk.Button(label="Test Connection")
-        test_button.connect("clicked", self._on_test_twilio)
+        test_button = Gtk.Button(label="Test API Connection")
+        test_button.connect("clicked", self._on_test_api)
         status_group.add(test_button)
 
         page.add(status_group)
 
-        # Test message group
-        test_msg_group = Adw.PreferencesGroup()
-        test_msg_group.set_title("Send Test Message")
+        # Endpoints info group
+        endpoints_group = Adw.PreferencesGroup()
+        endpoints_group.set_title("Available Endpoints")
 
-        test_entry = Gtk.Entry()
-        test_entry.set_placeholder_text("Test message...")
-        test_entry.set_vexpand(True)
-        test_msg_group.add(test_entry)
+        endpoints_label = Gtk.Label()
+        endpoints_label.set_markup(
+            "<small><b>GET  /api/health</b> - Health check\n"
+            "<b>GET  /api/companions</b> - List companions\n"
+            "<b>POST /api/companions/select</b> - Select companion\n"
+            "<b>GET  /api/companion/current</b> - Current companion\n"
+            "<b>POST /api/message</b> - Send message to AI\n"
+            "<b>GET  /api/conversation</b> - Get conversation\n"
+            "<b>DELETE /api/conversation</b> - Clear conversation\n"
+            "<b>GET  /api/memories</b> - Get memories\n"
+            "<b>POST /api/memories</b> - Add memory</small>"
+        )
+        endpoints_label.set_halign(Gtk.Align.START)
+        endpoints_label.set_margin_start(10)
+        endpoints_label.set_margin_end(10)
+        endpoints_label.set_margin_top(10)
+        endpoints_label.set_margin_bottom(10)
+        endpoints_label.set_selectable(True)
+        endpoints_group.add(endpoints_label)
 
-        send_test_button = Gtk.Button(label="Send Test SMS")
-        send_test_button.add_css_class("suggested-action")
-        send_test_button.connect("clicked", self._on_send_test_sms, test_entry)
-        test_msg_group.add(send_test_button)
-
-        page.add(test_msg_group)
+        page.add(endpoints_group)
 
         self.add(page)
 
         # Check status initially
-        self._on_test_twilio(None)
+        self._on_test_api(None)
 
-    def _on_test_twilio(self, button):
-        """Test Twilio connection."""
-        status = self.app.sms_integration.get_configuration_status()
+    def _on_api_port_changed(self, row):
+        """Handle API port change."""
+        try:
+            port = int(row.get_text())
+            self.app.config.set("api_server_port", port)
+        except ValueError:
+            pass
+
+    def _on_api_token_changed(self, row):
+        """Handle API token change."""
+        self.app.config.set("api_bearer_token", row.get_text())
+
+    def _on_test_api(self, button):
+        """Test API connection."""
+        import os
+
+        # Check if token is configured
+        token = os.getenv("API_BEARER_TOKEN") or self.app.config.get("api_bearer_token", "kardia-api-key")
+        port = self.app.config.get("api_server_port", 5000)
 
         messages = []
-        if status["account_sid_configured"]:
-            messages.append('<span foreground="green">✓ Account SID configured</span>')
+        if token and token != "kardia-api-key":
+            messages.append('<span foreground="green">✓ API Token configured</span>')
         else:
-            messages.append('<span foreground="red">✗ Account SID not configured</span>')
+            messages.append('<span foreground="orange">⚠ Using default token (change for security)</span>')
 
-        if status["auth_token_configured"]:
-            messages.append('<span foreground="green">✓ Auth token configured</span>')
+        messages.append(f'<span foreground="blue">📡 Server will run on port {port}</span>')
+
+        # Check if server is running
+        if hasattr(self.app, 'api_server') and self.app.api_server.is_running():
+            messages.append('\n<span foreground="green">✓ API server is running</span>')
         else:
-            messages.append('<span foreground="red">✗ Auth token not configured</span>')
+            messages.append('\n<span foreground="orange">⚠ API server not running yet</span>')
+            messages.append('<small>(Starts when app launches)</small>')
 
-        if status["twilio_number_configured"]:
-            messages.append('<span foreground="green">✓ Twilio number configured</span>')
-        else:
-            messages.append('<span foreground="red">✗ Twilio number not configured</span>')
-
-        if status["user_number_configured"]:
-            messages.append('<span foreground="green">✓ Your number configured</span>')
-        else:
-            messages.append('<span foreground="red">✗ Your number not configured</span>')
-
-        if status["fully_configured"]:
-            # Test connection
-            result = self.app.sms_integration.test_connection()
-            if result["success"]:
-                messages.append(
-                    f'\n<span foreground="green">✓ Connection successful!</span>\n'
-                    f'Account: {result.get("friendly_name", "N/A")}'
-                )
-            else:
-                messages.append(
-                    f'\n<span foreground="red">✗ Connection failed: {result.get("error", "Unknown error")}</span>'
-                )
-
-        self.twilio_status_label.set_markup("\n".join(messages))
-
-    def _on_send_test_sms(self, button, entry):
-        """Send test SMS message."""
-        message = entry.get_text().strip()
-        if not message:
-            message = "Test message from AI Companion!"
-
-        result = self.app.sms_integration.send_message(message)
-
-        # Show result dialog
-        result_dialog = Adw.Window()
-        result_dialog.set_default_size(400, 200)
-        result_dialog.set_title("SMS Result" if result["success"] else "SMS Failed")
-        result_dialog.set_modal(True)
-        result_dialog.set_transient_for(self)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
-        box.set_margin_top(20)
-        box.set_margin_bottom(20)
-
-        if result["success"]:
-            heading = Gtk.Label()
-            heading.set_markup("<b>SMS Sent!</b>")
-            box.append(heading)
-
-            label = Gtk.Label(label=f"Message SID: {result.get('message_sid', 'N/A')}")
-            box.append(label)
-        else:
-            heading = Gtk.Label()
-            heading.set_markup("<b>Failed to send SMS</b>")
-            box.append(heading)
-
-            label = Gtk.Label(label=result.get("error", "Unknown error"))
-            label.set_wrap(True)
-            box.append(label)
-
-        close_button = Gtk.Button(label="Close")
-        close_button.connect("clicked", lambda _: result_dialog.close())
-        close_button.set_halign(Gtk.Align.END)
-        close_button.set_margin_top(10)
-        box.append(close_button)
-
-        result_dialog.set_content(box)
-        result_dialog.present()
+        self.api_status_label.set_markup("\n".join(messages))
 
     def _create_memory_page(self):
         """Create memory settings page."""

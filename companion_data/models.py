@@ -38,8 +38,10 @@ class Companion:
         """Get the interests to display (custom or original)."""
         return self.custom_interests or self.interests
 
-    def get_system_prompt(self) -> str:
+    def get_system_prompt(self, current_datetime: str = None) -> str:
         """Generate the system prompt for the AI."""
+        from datetime import datetime
+
         name = self.display_name
         personality = self.display_personality
         interests = ", ".join(self.display_interests)
@@ -47,7 +49,14 @@ class Companion:
         tone = self.tone
         background = self.background
 
+        # Add current date/time context
+        if not current_datetime:
+            current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+
         return f"""You are {name}, an AI companion.
+
+Current date and time: {current_datetime}
+Always be aware of the current date and time when responding. Reference the time of day, day of week, or date naturally in your conversations when relevant.
 
 Your identity:
 - You identify as {self.gender}
@@ -205,6 +214,95 @@ class CompanionManager:
             self._save_custom_file()
             return True
         return False
+
+    def delete_companion(self, companion_id: str) -> bool:
+        """Delete any companion (preset or custom)."""
+        # First check if it's a custom companion
+        if companion_id in self.custom:
+            del self.custom[companion_id]
+            self._save_custom_file()
+            return True
+        # For presets, add to a hidden deletions list
+        return self._hide_preset(companion_id)
+
+    def _get_hidden_file(self) -> Path:
+        """Get the hidden companions file."""
+        return self.data_dir / "config" / "hidden_companions.json"
+
+    def _load_hidden(self) -> set:
+        """Load the set of hidden companion IDs."""
+        hidden_file = self._get_hidden_file()
+        if hidden_file.exists():
+            try:
+                with open(hidden_file, "r") as f:
+                    data = json.load(f)
+                    return set(data.get("hidden", []))
+            except Exception:
+                pass
+        return set()
+
+    def _save_hidden(self, hidden: set):
+        """Save the set of hidden companion IDs."""
+        hidden_file = self._get_hidden_file()
+        hidden_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(hidden_file, "w") as f:
+            json.dump({"hidden": list(hidden)}, f, indent=2)
+
+    def _hide_preset(self, companion_id: str) -> bool:
+        """Hide a preset companion by adding to hidden list."""
+        hidden = self._load_hidden()
+        if companion_id in self.presets:
+            hidden.add(companion_id)
+            self._save_hidden(hidden)
+            return True
+        return False
+
+    def is_hidden(self, companion_id: str) -> bool:
+        """Check if a companion is hidden."""
+        return companion_id in self._load_hidden()
+
+    def unhide_companion(self, companion_id: str) -> bool:
+        """Unhide a previously hidden companion."""
+        hidden = self._load_hidden()
+        if companion_id in hidden:
+            hidden.remove(companion_id)
+            self._save_hidden(hidden)
+            return True
+        return False
+
+    def get_all_companions(self) -> List[Dict]:
+        """Get all companions (presets + custom), excluding hidden ones."""
+        hidden = self._load_hidden()
+        presets = [c for c in self.get_all_presets() if c["id"] not in hidden]
+        return presets + self.get_all_custom()
+
+    def edit_preset_as_custom(self, companion_id: str, new_data: Dict) -> Dict:
+        """Convert a preset to a custom companion with edits."""
+        # Get the original preset data
+        preset = self.get_preset(companion_id)
+        if not preset:
+            raise ValueError(f"Preset {companion_id} not found")
+
+        # Create a new custom ID based on the preset
+        import uuid
+        custom_id = f"custom_{companion_id}_{uuid.uuid4().hex[:8]}"
+
+        # Update the data with new ID and custom values
+        new_data["id"] = custom_id
+        new_data["original_preset_id"] = companion_id  # Track origin
+
+        # Save as custom companion
+        self.save_custom(new_data)
+
+        return new_data
+
+    def can_edit(self, companion_id: str) -> bool:
+        """Check if a companion can be edited (all companions can be)."""
+        return companion_id in self.presets or companion_id in self.custom
+
+    def can_delete(self, companion_id: str) -> bool:
+        """Check if a companion can be deleted (all companions can be)."""
+        return companion_id in self.presets or companion_id in self.custom
 
     def get_preset(self, companion_id: str) -> Optional[Dict]:
         """Get a preset companion by ID."""

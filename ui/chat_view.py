@@ -95,12 +95,6 @@ class ChatView(Gtk.Box):
         entry_box.append(self.message_entry)
         entry_box.append(send_button)
 
-        # SMS toggle
-        self.sms_button = Gtk.ToggleButton(label="SMS")
-        self.sms_button.set_tooltip_text("Forward messages to your phone")
-        self.sms_button.connect("toggled", self._on_sms_toggled)
-        entry_box.append(self.sms_button)
-
         # Pack everything
         self.append(self.back_button)
         self.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
@@ -118,10 +112,6 @@ class ChatView(Gtk.Box):
         name_markup = f"<b>{companion.display_name}</b> - {companion.gender}"
         self.info_label.set_markup(name_markup)
 
-        # Load SMS state
-        sms_enabled = self.main_window.app.config.get("sms_forwarding_enabled", False)
-        self.sms_button.set_active(sms_enabled)
-
     def load_messages(self, messages):
         """Load conversation messages."""
         # Clear existing
@@ -133,30 +123,49 @@ class ChatView(Gtk.Box):
 
         # Add messages
         for msg in messages:
+            timestamp = msg.timestamp if hasattr(msg, 'timestamp') else None
             if msg.role == "user":
-                self._add_user_message(msg.content)
+                self._add_user_message(msg.content, timestamp)
             else:
-                self._add_companion_message(msg.content)
+                self._add_companion_message(msg.content, timestamp)
 
         # Scroll to bottom
         GLib.idle_add(self._scroll_to_bottom)
 
-    def show_user_message(self, content: str):
+    def show_user_message(self, content: str, timestamp: str = None):
         """Display a user message."""
-        self._add_user_message(content)
+        from datetime import datetime
+        if not timestamp:
+            timestamp = datetime.now().isoformat()
+        self._add_user_message(content, timestamp)
         GLib.idle_add(self._scroll_to_bottom)
 
-    def show_companion_message(self, content: str):
+    def show_companion_message(self, content: str, timestamp: str = None):
         """Display a companion message."""
-        self._add_companion_message(content)
+        from datetime import datetime
+        if not timestamp:
+            timestamp = datetime.now().isoformat()
+        self._add_companion_message(content, timestamp)
         GLib.idle_add(self._scroll_to_bottom)
 
-    def _add_user_message(self, content: str):
+    def _add_user_message(self, content: str, timestamp: str = None):
         """Add a user message to the chat."""
         row = Gtk.ListBoxRow()
         row.set_selectable(False)
 
-        # Main container that fills the width
+        # Main container - vertical for timestamp + message
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        vbox.set_hexpand(True)
+
+        # Timestamp row (right-aligned)
+        if timestamp:
+            timestamp_label = Gtk.Label(label=self._format_timestamp(timestamp))
+            timestamp_label.add_css_class("message-timestamp")
+            timestamp_label.set_halign(Gtk.Align.END)
+            timestamp_label.set_margin_end(15)
+            vbox.append(timestamp_label)
+
+        # Horizontal container for message
         main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         main_box.set_hexpand(True)
 
@@ -185,15 +194,42 @@ class ChatView(Gtk.Box):
         margin.set_size_request(10, 0)
         main_box.append(margin)
 
-        row.set_child(main_box)
+        vbox.append(main_box)
+        row.set_child(vbox)
         self.messages_list.append(row)
 
-    def _add_companion_message(self, content: str):
+    def _add_companion_message(self, content: str, timestamp: str = None):
         """Add a companion message to the chat."""
         row = Gtk.ListBoxRow()
         row.set_selectable(False)
 
-        # Main container that fills the width
+        # Main container - vertical for timestamp + message
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        vbox.set_hexpand(True)
+
+        # Timestamp row (left-aligned with avatar)
+        if timestamp:
+            timestamp_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+            timestamp_box.set_hexpand(True)
+
+            # Left margin
+            margin = Gtk.Box()
+            margin.set_size_request(52, 0)  # Match avatar + spacing
+            timestamp_box.append(margin)
+
+            timestamp_label = Gtk.Label(label=self._format_timestamp(timestamp))
+            timestamp_label.add_css_class("message-timestamp")
+            timestamp_label.set_halign(Gtk.Align.START)
+            timestamp_box.append(timestamp_label)
+
+            # Spacer
+            spacer = Gtk.Box()
+            spacer.set_hexpand(True)
+            timestamp_box.append(spacer)
+
+            vbox.append(timestamp_box)
+
+        # Horizontal container for message
         main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         main_box.set_hexpand(True)
 
@@ -232,7 +268,8 @@ class ChatView(Gtk.Box):
         spacer.set_hexpand(True)
         main_box.append(spacer)
 
-        row.set_child(main_box)
+        vbox.append(main_box)
+        row.set_child(vbox)
         self.messages_list.append(row)
 
     def _create_companion_avatar(self) -> Gtk.Widget:
@@ -257,6 +294,31 @@ class ChatView(Gtk.Box):
         avatar.add_css_class("avatar-small")
         return avatar
 
+    def _format_timestamp(self, timestamp: str) -> str:
+        """Format a timestamp string for display."""
+        from datetime import datetime
+
+        try:
+            # Parse ISO format timestamp
+            dt = datetime.fromisoformat(timestamp)
+
+            # Get current time for comparison
+            now = datetime.now()
+
+            # Format based on how recent the message is
+            if dt.date() == now.date():
+                # Today - show time only
+                return dt.strftime("%I:%M %p").lstrip("0")
+            elif (now - dt).days < 7:
+                # This week - show day and time
+                return dt.strftime("%a at %I:%M %p").lstrip("0")
+            else:
+                # Older - show date and time
+                return dt.strftime("%b %d, %Y at %I:%M %p").lstrip("0")
+        except Exception:
+            # If parsing fails, return as-is
+            return timestamp
+
     def _scroll_to_bottom(self):
         """Scroll messages view to bottom."""
         adj = self.messages_list.get_adjustment()
@@ -271,21 +333,12 @@ class ChatView(Gtk.Box):
         # Clear entry
         self.message_entry.set_text("")
 
-        # Show message immediately
-        self.show_user_message(message)
-
-        # Send through main window
+        # Send through main window (which will display the message)
         self.main_window.send_message(message)
 
     def _on_back_clicked(self, button):
         """Handle back button click."""
         self.main_window.go_to_companion_selection()
-
-    def _on_sms_toggled(self, button):
-        """Handle SMS toggle."""
-        enabled = button.get_active()
-        self.main_window.app.message_forwarder.toggle_sms_forwarding(enabled)
-        self.main_window.app.config.set("sms_forwarding_enabled", enabled)
 
     def _on_delete_chat(self, button):
         """Handle delete chat button click."""

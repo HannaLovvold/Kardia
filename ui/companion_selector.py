@@ -170,18 +170,16 @@ class CompanionSelector(Gtk.Box):
         select_button.connect("clicked", self._on_companion_selected, companion_data["id"])
         button_box.append(select_button)
 
-        # Edit button (only for custom companions)
-        if companion_data["id"].startswith("custom_"):
-            edit_button = Gtk.Button(label="Edit")
-            edit_button.connect("clicked", self._on_edit_companion, companion_data["id"])
-            button_box.append(edit_button)
+        # Edit button (for all companions)
+        edit_button = Gtk.Button(label="Edit")
+        edit_button.connect("clicked", self._on_edit_companion, companion_data["id"])
+        button_box.append(edit_button)
 
-        # Delete button (only for custom companions)
-        if companion_data["id"].startswith("custom_"):
-            delete_button = Gtk.Button(label="Delete")
-            delete_button.add_css_class("destructive-action")
-            delete_button.connect("clicked", self._on_delete_companion, companion_data["id"], companion_data["name"])
-            button_box.append(delete_button)
+        # Delete button (for all companions)
+        delete_button = Gtk.Button(label="Delete")
+        delete_button.add_css_class("destructive-action")
+        delete_button.connect("clicked", self._on_delete_companion, companion_data["id"], companion_data["name"])
+        button_box.append(delete_button)
 
         box.append(button_box)
         row.set_child(box)
@@ -235,18 +233,30 @@ class CompanionSelector(Gtk.Box):
         """Handle edit companion button click."""
         from companion_editor_dialog import CompanionEditorDialog
 
-        # Get companion data
+        # Get companion data - check both custom and preset
         companion_data = self.main_window.app.companion_manager.get_custom(companion_id)
+        is_preset = False
+
+        if not companion_data:
+            companion_data = self.main_window.app.companion_manager.get_preset(companion_id)
+            is_preset = True
+
         if not companion_data:
             return
 
-        dialog = CompanionEditorDialog(self.main_window, self.main_window.app, companion_data, parent_selector=self)
+        dialog = CompanionEditorDialog(
+            self.main_window,
+            self.main_window.app,
+            companion_data,
+            parent_selector=self,
+            is_preset=is_preset
+        )
         dialog.present()
 
     def _on_delete_companion(self, button, companion_id: str, companion_name: str):
         """Handle delete companion button click."""
-        # Delete the companion
-        self.main_window.app.companion_manager.delete_custom(companion_id)
+        # Delete the companion (works for both custom and preset)
+        self.main_window.app.companion_manager.delete_companion(companion_id)
 
         # Reload companions
         self._load_companions()
