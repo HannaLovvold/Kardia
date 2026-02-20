@@ -8,10 +8,11 @@ Part of the Kardia AI Companion application.
 """
 import gi
 import uuid
+from pathlib import Path
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw
+from gi.repository import Gtk, Adw, GdkPixbuf, Gdk
 
 
 class CompanionEditorDialog(Adw.Window):
@@ -116,6 +117,35 @@ class CompanionEditorDialog(Adw.Window):
         group = Adw.PreferencesGroup()
         group.set_title("Basic Information")
 
+        # Avatar section
+        avatar_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        avatar_box.set_margin_top(10)
+        avatar_box.set_margin_bottom(10)
+
+        # Avatar preview - use a frame for circular clip
+        avatar_frame = Gtk.Frame()
+        avatar_frame.add_css_class("avatar-editor-frame")
+
+        self.avatar_image = Gtk.Image()
+        self.avatar_image.set_size_request(80, 80)
+        avatar_frame.set_child(self.avatar_image)
+        avatar_box.append(avatar_frame)
+
+        # Avatar buttons
+        button_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+
+        select_button = Gtk.Button(label="Choose Image...")
+        select_button.connect("clicked", self._on_choose_avatar)
+        button_box.append(select_button)
+
+        remove_button = Gtk.Button(label="Remove Image")
+        remove_button.add_css_class("destructive-action")
+        remove_button.connect("clicked", self._on_remove_avatar)
+        button_box.append(remove_button)
+
+        avatar_box.append(button_box)
+        group.add(avatar_box)
+
         # Name
         self.name_entry = Adw.EntryRow()
         self.name_entry.set_title("Name")
@@ -138,6 +168,9 @@ class CompanionEditorDialog(Adw.Window):
         group.add(self.pronouns_entry)
 
         parent.append(group)
+
+        # Load current avatar if editing
+        self._update_avatar_preview()
 
     def _create_personality_section(self, parent):
         """Create personality traits section."""
@@ -354,8 +387,85 @@ class CompanionEditorDialog(Adw.Window):
 
         parent.append(group)
 
+    def _on_choose_avatar(self, button):
+        """Handle avatar image selection button click."""
+        # Create file chooser dialog
+        dialog = Gtk.FileDialog(title="Choose Avatar Image")
+
+        # Set up filters for images
+        file_filter = Gtk.FileFilter()
+        file_filter.set_name("Images")
+        file_filter.add_mime_type("image/png")
+        file_filter.add_mime_type("image/jpeg")
+        file_filter.add_mime_type("image/jpg")
+        file_filter.add_mime_type("image/webp")
+        file_filter.add_mime_type("image/gif")
+
+        dialog.set_default_filter(file_filter)
+
+        # Show dialog and get response
+        def on_open(dialog, result):
+            try:
+                file = dialog.open_finish(result)
+                if file:
+                    file_path = file.get_path()
+                    # Open the cropper dialog
+                    self._open_avatar_cropper(file_path)
+            except Exception as e:
+                print(f"Error selecting avatar: {e}")
+
+        dialog.open(self, None, on_open)
+
+    def _open_avatar_cropper(self, file_path: str):
+        """Open the avatar cropper dialog."""
+        from avatar_cropper_dialog import AvatarCropperDialog
+
+        def on_crop_complete(success, cropped_path):
+            print(f"DEBUG: Crop complete - success={success}, path={cropped_path}")
+            if success and cropped_path:
+                self.image_path = cropped_path
+                print(f"DEBUG: Image path set to: {self.image_path}")
+                print(f"DEBUG: File exists: {Path(self.image_path).exists()}")
+                self._update_avatar_preview()
+
+        cropper = AvatarCropperDialog(self, file_path, on_crop_complete)
+        cropper.present()
+
+    def _on_remove_avatar(self, button):
+        """Handle remove avatar button click."""
+        self.image_path = None
+        self._update_avatar_preview()
+
+    def _update_avatar_preview(self):
+        """Update the avatar preview image."""
+        print(f"DEBUG: _update_avatar_preview called, image_path={self.image_path}")
+        if self.image_path and Path(self.image_path).exists():
+            try:
+                print(f"DEBUG: Loading image from {self.image_path}")
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(self.image_path, 80, 80)
+                self.avatar_image.set_from_pixbuf(pixbuf)
+                print(f"DEBUG: Avatar preview updated successfully")
+            except Exception as e:
+                print(f"Error loading avatar preview: {e}")
+                import traceback
+                traceback.print_exc()
+                self._show_empty_avatar()
+        else:
+            print(f"DEBUG: No image path or file doesn't exist, showing empty avatar")
+            self._show_empty_avatar()
+
+    def _show_empty_avatar(self):
+        """Show empty avatar placeholder."""
+        # Create a simple placeholder
+        self.avatar_image.set_from_icon_name("avatar-default-symbolic")
+        self.avatar_image.set_pixel_size(80)
+
     def _load_companion_data(self, data):
         """Load existing companion data for editing."""
+        # Load image path first
+        self.image_path = data.get("image_path")
+        self._update_avatar_preview()
+
         self.name_entry.set_text(data.get("name", ""))
 
         # Set gender

@@ -324,10 +324,6 @@ class CompanionManager:
         """Get all custom companions."""
         return list(self.custom.values())
 
-    def get_all_companions(self) -> List[Dict]:
-        """Get all companions (presets + custom)."""
-        return self.get_all_presets() + self.get_all_custom()
-
     def create_companion(self, companion_id: str, **customizations) -> Optional[Companion]:
         """Create a companion from a preset or custom companion with optional customizations."""
         data = self.get_companion(companion_id)

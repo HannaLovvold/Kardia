@@ -199,21 +199,19 @@ class CompanionSelector(Gtk.Box):
 
         return avatar
 
-    def _create_companion_avatar(self, companion_data: dict) -> Gtk.Image:
+    def _create_companion_avatar(self, companion_data: dict):
         """Create an avatar for a companion, using image if available."""
         # Check if companion has an image
         if "image_path" in companion_data and companion_data["image_path"]:
             try:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(
-                    companion_data["image_path"], 48, 48
-                )
-                texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-                image = Gtk.Image()
-                image.set_from_paintable(texture)
-                image.set_size_request(48, 48)
-                return image
+                # Use Gtk.Picture for better image handling
+                picture = Gtk.Picture.new_for_filename(companion_data["image_path"])
+                picture.set_size_request(48, 48)
+                picture.set_can_shrink(False)
+                picture.add_css_class("avatar-picture")
+                return picture
             except Exception as e:
-                print(f"Error loading companion image: {e}")
+                print(f"Error loading companion image for {companion_data.get('name')}: {e}")
 
         # Fall back to text avatar
         return self._create_avatar(companion_data["name"])
