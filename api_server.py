@@ -419,7 +419,38 @@ class APIServer:
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500
 
-        @self.app.route('/api/conversation', methods=['DELETE'])
+        @self.app.route('/api/conversations/<companion_id>', methods=['GET'])
+        @require_auth
+        def get_conversation_by_id(companion_id):
+            """Get conversation history for a specific companion."""
+            try:
+                conversation = self.app_instance.storage.load_conversation(companion_id)
+
+                if not conversation:
+                    return jsonify({
+                        'success': True,
+                        'companion_id': companion_id,
+                        'messages': [],
+                        'last_updated': None
+                    })
+
+                return jsonify({
+                    'success': True,
+                    'companion_id': companion_id,
+                    'messages': [
+                        {
+                            'role': msg.role,
+                            'content': msg.content,
+                            'timestamp': msg.timestamp
+                        }
+                        for msg in conversation.messages
+                    ],
+                    'last_updated': conversation.last_updated
+                })
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/conversation', methods=['GET'])
         @require_auth
         def clear_conversation():
             """Clear conversation history for current companion."""

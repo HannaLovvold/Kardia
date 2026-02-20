@@ -127,6 +127,16 @@
     padding: 10px;
 }
 
+/* Avatar images - no padding, fill the circle */
+image.avatar {
+    padding: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+}
+
+/* Avatar image box - provides circular clipping for actual images */
+
 .avatar-small {
     font-size: 14px;
     font-weight: bold;
@@ -136,6 +146,43 @@
     min-width: 30px;
     min-height: 30px;
     padding: 5px;
+}
+
+/* Avatar cropper preview - circular mask */
+.avatar-cropper-preview {
+    border-radius: 50%;
+}
+
+/* Avatar preview frame - adds the border ring */
+.avatar-preview-frame {
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+/* Avatar editor frame - for the edit dialog preview */
+.avatar-editor-frame {
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+}
+
+.avatar-editor-frame image {
+    border-radius: 50%;
+}
+
+/* Avatar picture - circular avatar using Gtk.Picture */
+.avatar-picture {
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+}
+
+/* Avatar images - small variant */
+image.avatar-small {
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
 }
 
 /* =============================================================================

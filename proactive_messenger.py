@@ -69,9 +69,24 @@ def is_within_time_window(start_time: str, end_time: str) -> bool:
     return start <= now <= end
 
 
-def should_send_message(config: dict, companion_id: str) -> bool:
+def should_send_message(config: dict, companion_id: str, conversation=None) -> bool:
     """Determine if a companion should send a message now."""
     now = datetime.now()
+
+    # Check if there's an active conversation with recent messages
+    if conversation:
+        # Check if there are any messages from the last 2 hours
+        two_hours_ago = now - timedelta(hours=2)
+        recent_messages = [msg for msg in conversation.messages if msg.timestamp]
+        if recent_messages:
+            # Get the timestamp of the most recent message
+            try:
+                last_msg_timestamp = datetime.fromisoformat(recent_messages[-1].timestamp)
+                # If there was a message in the last 2 hours, don't send proactive
+                if last_msg_timestamp > two_hours_ago:
+                    return False
+            except:
+                pass  # If timestamp parsing fails, continue
 
     # Get last message time for this companion
     last_messages = config.get("last_messages", {})
@@ -80,27 +95,27 @@ def should_send_message(config: dict, companion_id: str) -> bool:
     if last_sent_str:
         last_sent = datetime.fromisoformat(last_sent_str)
 
-        # Don't send if we messaged in the last 4 hours
-        if now - last_sent < timedelta(hours=4):
+        # Don't send if we messaged in the last 2 hours (was 4)
+        if now - last_sent < timedelta(hours=2):
             return False
 
         # Don't send if we messaged today already and reached daily limit
         if last_sent.date() == now.date():
             companion_settings = config.get("companion_settings", {}).get(companion_id, {})
-            daily_count = companion_settings.get("daily_count", config.get("global_frequency", 3))
+            daily_limit = companion_settings.get("daily_limit", config.get("global_frequency", 3))
             today_messages = companion_settings.get("today_messages", 0)
-            if today_messages >= daily_count:
+            if today_messages >= daily_limit:
                 return False
 
     # Random chance to send (approximately 1 check per 30 minutes = 48 checks/day)
-    # With 1/48 chance, we get ~1 message/day
     # Adjust based on desired frequency
     companion_settings = config.get("companion_settings", {}).get(companion_id, {})
     if not companion_settings.get("enabled", True):
         return False
 
+    # Use companion's frequency or global frequency
     frequency = companion_settings.get("frequency", config.get("global_frequency", 3))
-    # 48 checks in 16 hours (9am-10pm) = 1 check per 20 minutes
+    # 48 checks in 13 hours (9am-10pm) ≈ 1 check per 16 minutes
     # For 3 messages/day: 3/48 = 1/16 chance
     chance = frequency / 48.0
 
@@ -222,8 +237,15 @@ class ProactiveMessageScheduler:
             print(f"Error getting companions: {e}")
             return []
 
+    def _get_conversation_for_companion(self, companion_id: str):
+        """Get the conversation for a specific companion."""
+        try:
+            return self.app_instance.storage.load_conversation(companion_id)
+        except Exception:
+            return None
+
     def _send_proactive_message(self, companion: dict):
-        """Send a proactive message from a companion."""
+        """Send a proactive message from a companion by adding it to their conversation."""
         try:
             comp_id = companion.get('id')
             comp_name = companion.get('name', 'Companion')
@@ -232,22 +254,32 @@ class ProactiveMessageScheduler:
             # Get a message template
             template = get_message_template(comp_tone)
 
+            # Get or create the conversation for this companion
+            conversation = self.app_instance.storage.get_or_create_conversation(comp_id)
+
+            # Add the proactive message as an assistant message
+            timestamp = datetime.now().isoformat()
+            conversation.add_message("assistant", template, timestamp)
+
+            # Save the conversation
+            self.app_instance.storage.save_conversation(conversation)
+
             # Import here to avoid circular dependency
             from api_server import send_webhook_notification
 
-            # Send the message via webhook
+            # Send webhook notification (if configured)
             message_data = {
                 "companion_id": comp_id,
                 "companion_name": comp_name,
                 "message": template,
                 "type": "proactive",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": timestamp
             }
 
             send_webhook_notification("proactive_message", message_data)
 
             # Update last message time
-            self.config.setdefault("last_messages", {})[comp_id] = datetime.now().isoformat()
+            self.config.setdefault("last_messages", {})[comp_id] = timestamp
 
             # Update daily count
             self.config.setdefault("companion_settings", {}).setdefault(comp_id, {})
@@ -255,8 +287,12 @@ class ProactiveMessageScheduler:
             comp_settings = self.config["companion_settings"][comp_id]
 
             if comp_settings.get("last_date") != today:
+                # New day - generate a random daily limit between 1 and 5
+                daily_limit = random.randint(1, 5)
+                comp_settings["daily_limit"] = daily_limit
                 comp_settings["today_messages"] = 1
                 comp_settings["last_date"] = today
+                print(f"📱 {comp_name} daily limit set to {daily_limit} messages")
             else:
                 comp_settings["today_messages"] = comp_settings.get("today_messages", 0) + 1
 
@@ -279,7 +315,11 @@ class ProactiveMessageScheduler:
 
                     for companion in companions:
                         comp_id = companion.get('id')
-                        if should_send_message(self.config, comp_id):
+
+                        # Get the conversation for this companion to check if there's an active chat
+                        conversation = self._get_conversation_for_companion(comp_id)
+
+                        if should_send_message(self.config, comp_id, conversation):
                             self._send_proactive_message(companion)
 
                 # Sleep until next check
