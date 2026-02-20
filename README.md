@@ -4,6 +4,14 @@
 
 A **completely standalone** modern GTK4/libadwaita AI companion application with REST API, memory management, and multi-companion support.
 
+## 🖼️ Screenshots
+
+### Desktop Application
+![Kardia Desktop Program](/home/hanna/Pictures/Kardia_program.png)
+
+### Android App
+![Kardia Android App](/home/hanna/Pictures/Kardia_android_app.png)
+
 ## ✨ Standalone
 
 Kardia is now **100% standalone** - all backend code is included. No need for the parent `ai-companion` directory!
