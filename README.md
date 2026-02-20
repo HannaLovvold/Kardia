@@ -7,10 +7,10 @@ A **completely standalone** modern GTK4/libadwaita AI companion application with
 ## 🖼️ Screenshots
 
 ### Desktop Application
-![Kardia Desktop Program](/home/hanna/Pictures/Kardia_program.png)
+![Kardia Desktop Program](/media/Kardia_program.png)
 
 ### Android App
-![Kardia Android App](/home/hanna/Pictures/Kardia_android_app.png)
+![Kardia Android App](/media/Kardia_android_app.png)
 
 ## ✨ Standalone
 
