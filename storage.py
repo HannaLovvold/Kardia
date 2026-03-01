@@ -1,4 +1,5 @@
 """Conversation storage and persistence layer."""
+import fcntl
 import json
 import os
 from datetime import datetime
@@ -21,25 +22,37 @@ class ConversationStorage:
         return self.conversations_dir / f"{companion_id}.json"
 
     def save_conversation(self, conversation: Conversation) -> bool:
-        """Save a conversation to disk."""
+        """Save a conversation to disk with file locking."""
         try:
             path = self.get_conversation_path(conversation.companion_id)
             with open(path, "w") as f:
-                json.dump(conversation.to_dict(), f, indent=2)
+                # Acquire exclusive lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                try:
+                    json.dump(conversation.to_dict(), f, indent=2)
+                finally:
+                    # Release lock
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             return True
         except Exception as e:
             print(f"Error saving conversation: {e}")
             return False
 
     def load_conversation(self, companion_id: str) -> Optional[Conversation]:
-        """Load a conversation from disk."""
+        """Load a conversation from disk with file locking."""
         try:
             path = self.get_conversation_path(companion_id)
             if not path.exists():
                 return None
 
             with open(path, "r") as f:
-                data = json.load(f)
+                # Acquire shared lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                try:
+                    data = json.load(f)
+                finally:
+                    # Release lock
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
             messages = [Message.from_dict(m) for m in data.get("messages", [])]
             return Conversation(
@@ -120,6 +133,63 @@ class ConversationStorage:
         except Exception as e:
             print(f"Error exporting conversation: {e}")
             return False
+
+    def clean_empty_messages(self, companion_id: str) -> int:
+        """Remove empty assistant messages from a conversation.
+
+        Returns the number of messages removed.
+        Selfie messages (with content "[Sent a selfie]" and image_base64) are preserved.
+        """
+        try:
+            conv = self.load_conversation(companion_id)
+            if not conv:
+                return 0
+
+            original_count = len(conv.messages)
+            # Filter out empty assistant messages (excluding selfies)
+            filtered_messages = [
+                msg for msg in conv.messages
+                if not (
+                    msg.role == "assistant" and
+                    msg.content.strip() == "" and
+                    not msg.image_base64
+                )
+            ]
+
+            if len(filtered_messages) < original_count:
+                # Update the conversation with filtered messages
+                conv.messages = filtered_messages
+                conv.last_updated = datetime.now().isoformat()
+                self.save_conversation(conv)
+                return original_count - len(filtered_messages)
+
+            return 0
+        except Exception as e:
+            print(f"Error cleaning empty messages: {e}")
+            return 0
+
+    def clean_all_empty_messages(self) -> dict:
+        """Remove empty assistant messages from all conversations.
+
+        Returns a dict with companion_id as key and count of removed messages as value.
+        """
+        results = {}
+        try:
+            files = list(self.conversations_dir.glob("*.json"))
+            for file_path in files:
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+                        companion_id = data.get("companion_id")
+                        if companion_id:
+                            count = self.clean_empty_messages(companion_id)
+                            if count > 0:
+                                results[companion_id] = count
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"Error cleaning all conversations: {e}")
+        return results
 
 
 class ConfigManager:

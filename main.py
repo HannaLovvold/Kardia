@@ -28,6 +28,7 @@ from ai_backend import OllamaBackend
 from openai_backend import OpenAIBackend
 from api_server import APIServer
 from proactive_messenger import ProactiveMessageScheduler
+from selfie_sender import SelfieScheduler
 from storage import ConversationStorage, ConfigManager
 from memory import MemoryStore
 from memory_extractor import MemoryManager
@@ -80,6 +81,9 @@ class KardiaApp(Adw.Application):
         # Initialize Proactive Message Scheduler
         self.proactive_scheduler = ProactiveMessageScheduler(self)
 
+        # Initialize Selfie Scheduler
+        self.selfie_scheduler = SelfieScheduler(self)
+
         # Initialize Memory
         self.memory_store = MemoryStore(self.project_dir)
         self.memory_manager = MemoryManager(self.ai_backend, self.memory_store)
@@ -111,6 +115,9 @@ class KardiaApp(Adw.Application):
 
         # Start proactive message scheduler
         self.proactive_scheduler.start()
+
+        # Start selfie scheduler
+        self.selfie_scheduler.start()
 
         win.present()
 
@@ -173,16 +180,27 @@ class KardiaApp(Adw.Application):
         )
         self.config.set("last_companion", companion.id)
 
-    def send_message(self, message: str, callback):
+    def send_message(self, message: str, callback, retry_count: int = 0):
         """Send a message and get AI response."""
         if not self.current_companion:
             callback("Error: No companion selected")
             return
 
-        # Add user message to conversation
-        from datetime import datetime
-        timestamp = datetime.now().isoformat()
-        self.current_conversation.add_message("user", message, timestamp)
+        # Reload conversation from disk to get any updates (e.g., selfies, proactive messages)
+        companion_id = self.current_companion.id
+        self.current_conversation = self.storage.load_conversation(companion_id)
+        if not self.current_conversation:
+            self.current_conversation = self.storage.get_or_create_conversation(companion_id)
+
+        # Add user message to conversation (only on first attempt, not retries)
+        if retry_count == 0:
+            from datetime import datetime
+            timestamp = datetime.now().isoformat()
+            self.current_conversation.add_message("user", message, timestamp)
+
+            # Save conversation immediately to preserve user message
+            if self.config.get("auto_save_enabled", True):
+                self.storage.save_conversation(self.current_conversation)
 
         # Get context and system prompt
         messages = self.current_conversation.get_context_messages()
@@ -195,8 +213,28 @@ class KardiaApp(Adw.Application):
         if memory_context and memory_context != "No information about the user yet.":
             system_prompt += f"\n\nWhat you remember about the user:\n{memory_context}\n\nUse this information to personalize your responses and show you care."
 
+        # Add retry instruction if this is a retry attempt
+        if retry_count > 0:
+            system_prompt += f"\n\nIMPORTANT: Your previous response was empty. Please provide a meaningful, non-empty response to the user's message."
+
         # Generate response
         def on_response(response: str):
+            # Check if response is empty (and not a selfie)
+            response_stripped = response.strip() if response else ""
+            is_empty = response_stripped == ""
+
+            if is_empty and retry_count < 3:
+                # Retry with incremented counter
+                print(f"Empty response received, retrying... (attempt {retry_count + 1}/3)")
+                self.send_message(message, callback, retry_count + 1)
+                return
+
+            # Reload conversation from disk to get any updates (e.g., selfies, proactive messages)
+            companion_id = self.current_companion.id
+            self.current_conversation = self.storage.load_conversation(companion_id)
+            if not self.current_conversation:
+                self.current_conversation = self.storage.get_or_create_conversation(companion_id)
+
             # Add assistant message
             timestamp = datetime.now().isoformat()
             self.current_conversation.add_message("assistant", response, timestamp)
@@ -223,6 +261,76 @@ class KardiaApp(Adw.Application):
         if self.current_conversation:
             return self.current_conversation.messages
         return []
+
+    def regenerate_last_response(self, callback):
+        """Regenerate the last assistant response.
+
+        Removes the last assistant message and generates a new response.
+        Useful when the last response was empty or unsatisfactory.
+        """
+        if not self.current_companion or not self.current_conversation:
+            callback("Error: No companion or conversation selected")
+            return
+
+        messages = self.current_conversation.messages
+        if not messages:
+            callback("Error: No messages in conversation")
+            return
+
+        # Find and remove the last assistant message
+        last_message = messages[-1]
+        if last_message.role != "assistant":
+            callback("Error: Last message is not from assistant")
+            return
+
+        # Remove the last assistant message
+        self.current_conversation.messages.pop()
+        # Save after removing
+        if self.config.get("auto_save_enabled", True):
+            self.storage.save_conversation(self.current_conversation)
+
+        # Get context and system prompt (conversation now ends with user message)
+        context_messages = self.current_conversation.get_context_messages()
+        from datetime import datetime
+        current_dt = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+        system_prompt = self.current_companion.get_system_prompt(current_dt)
+
+        # Add memory context to system prompt
+        memory_context = self.memory_store.get_context_summary()
+        if memory_context and memory_context != "No information about the user yet.":
+            system_prompt += f"\n\nWhat you remember about the user:\n{memory_context}\n\nUse this information to personalize your responses and show you care."
+
+        # Generate new response
+        def on_response(response: str):
+            # Check if response is empty
+            response_stripped = response.strip() if response else ""
+            is_empty = response_stripped == ""
+
+            if is_empty:
+                print("Empty response received on regeneration, retrying...")
+                self.regenerate_last_response(callback)
+                return
+
+            # Add new assistant message
+            timestamp = datetime.now().isoformat()
+            self.current_conversation.add_message("assistant", response, timestamp)
+
+            # Save conversation
+            if self.config.get("auto_save_enabled", True):
+                self.storage.save_conversation(self.current_conversation)
+
+            # Extract memories from conversation
+            try:
+                self.memory_manager.process_conversation(
+                    self.current_conversation.get_context_messages(),
+                    self.current_companion.id,
+                )
+            except Exception as e:
+                print(f"Memory extraction error: {e}")
+
+            callback(response)
+
+        self.ai_backend.generate_async(context_messages, system_prompt, on_response)
 
 
 def main():

@@ -7,10 +7,10 @@ A **completely standalone** modern GTK4/libadwaita AI companion application with
 ## 🖼️ Screenshots
 
 ### Desktop Application
-![Kardia Desktop Program](/media/Kardia_program.png)
+![Kardia Desktop Program](/home/hanna/Pictures/Kardia_program.png)
 
 ### Android App
-![Kardia Android App](/media/Kardia_android_app.png)
+![Kardia Android App](/home/hanna/Pictures/Kardia_android_app.png)
 
 ## ✨ Standalone
 
@@ -21,7 +21,7 @@ Kardia is now **100% standalone** - all backend code is included. No need for th
 - **Modern GTK4/libadwaita Interface** - Beautiful GNOME-style UI
 - **Multiple AI Companions** - Create custom companions with personalities
 - **Proactive Messaging** - Companions send spontaneous messages throughout the day
-- **REST API** - Access from my phone app or other clients
+- **REST API** - Access from your phone app or other clients
 - **Push Notifications** - Webhook support for real-time updates
 - **Companion Avatars** - Custom images for each character
 - **Typing Indicators** - See when AI is generating a response
@@ -108,7 +108,7 @@ python3 main.py
 
 ## 📱 REST API Usage
 
-The REST API allows external clients (like my custom phone app) to interact with Kardia.
+The REST API allows external clients (like your custom phone app) to interact with Kardia.
 
 ### Authentication
 

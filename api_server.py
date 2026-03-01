@@ -404,17 +404,25 @@ class APIServer:
 
                 messages = self.app_instance.current_conversation.messages
 
+                messages_data = []
+                for msg in messages:
+                    msg_data = {
+                        'role': msg.role,
+                        'content': msg.content,
+                        'timestamp': msg.timestamp
+                    }
+                    # Include image data if present
+                    if msg.image_base64:
+                        msg_data['image_base64'] = msg.image_base64
+                        msg_data['image_mime_type'] = msg.image_mime_type
+                        if msg.image_name:
+                            msg_data['image_name'] = msg.image_name
+                    messages_data.append(msg_data)
+
                 return jsonify({
                     'success': True,
                     'companion_id': self.app_instance.current_conversation.companion_id,
-                    'messages': [
-                        {
-                            'role': msg.role,
-                            'content': msg.content,
-                            'timestamp': msg.timestamp
-                        }
-                        for msg in messages
-                    ]
+                    'messages': messages_data
                 })
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500
@@ -434,18 +442,46 @@ class APIServer:
                         'last_updated': None
                     })
 
+                messages_data = []
+                for msg in conversation.messages:
+                    msg_data = {
+                        'role': msg.role,
+                        'content': msg.content,
+                        'timestamp': msg.timestamp
+                    }
+                    # Include image data if present
+                    if msg.image_base64:
+                        msg_data['image_base64'] = msg.image_base64
+                        msg_data['image_mime_type'] = msg.image_mime_type
+                        if msg.image_name:
+                            msg_data['image_name'] = msg.image_name
+                    messages_data.append(msg_data)
+
                 return jsonify({
                     'success': True,
                     'companion_id': companion_id,
-                    'messages': [
-                        {
-                            'role': msg.role,
-                            'content': msg.content,
-                            'timestamp': msg.timestamp
-                        }
-                        for msg in conversation.messages
-                    ],
+                    'messages': messages_data,
                     'last_updated': conversation.last_updated
+                })
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/conversations/<companion_id>', methods=['DELETE'])
+        @require_auth
+        def delete_conversation(companion_id):
+            """Delete conversation history for a specific companion."""
+            try:
+                # Delete the conversation
+                self.app_instance.storage.delete_conversation(companion_id)
+
+                # Send webhook notification
+                send_webhook_notification("conversation_cleared", {
+                    "companion_id": companion_id
+                })
+
+                return jsonify({
+                    'success': True,
+                    'message': 'Conversation deleted'
                 })
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500
@@ -632,6 +668,163 @@ class APIServer:
                     save_proactive_config(config)
 
                     return jsonify({'success': True, 'message': 'Companion settings updated'})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/selfie/status', methods=['GET'])
+        @require_auth
+        def get_selfie_status():
+            """Get selfie tracking status for all companions."""
+            try:
+                from selfie_sender import load_selfie_tracking, find_selfie_folders
+
+                tracking = load_selfie_tracking()
+                selfie_folders = find_selfie_folders()
+
+                companions = self.app_instance.companion_manager.get_all_companions()
+
+                status_list = []
+                for comp in companions:
+                    comp_name = comp.get('name')
+                    comp_id = comp.get('id')
+
+                    # Check if this companion has a selfie folder
+                    has_folder = comp_name in selfie_folders
+
+                    # Get count of sent selfies
+                    sent_count = len(tracking.get('sent_selfies', {}).get(comp_id, []))
+                    last_sent = tracking.get('last_sent_date', {}).get(comp_id)
+
+                    # Count available selfies
+                    available_count = 0
+                    if has_folder:
+                        from selfie_sender import get_time_context, get_available_selfies
+                        location, time_period = get_time_context()
+                        sent_list = tracking.get('sent_selfies', {}).get(comp_id, [])
+                        available_count = len(get_available_selfies(
+                            selfie_folders[comp_name], location, time_period, sent_list
+                        ))
+
+                    status_list.append({
+                        'companion_id': comp_id,
+                        'companion_name': comp_name,
+                        'has_selfie_folder': has_folder,
+                        'selfies_sent': sent_count,
+                        'last_sent_date': last_sent,
+                        'available_selfies': available_count
+                    })
+
+                return jsonify({
+                    'success': True,
+                    'companions': status_list
+                })
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/selfie/send', methods=['POST'])
+        @require_auth
+        def send_selfie():
+            """Manually trigger sending a selfie for a companion."""
+            try:
+                from selfie_sender import send_selfie_now
+
+                data = request.get_json()
+                if not data or 'companion_id' not in data:
+                    return jsonify({'success': False, 'error': 'Missing companion_id'}), 400
+
+                companion_id = data['companion_id']
+                force = data.get('force', False)
+
+                # Try to send a selfie
+                result = send_selfie_now(companion_id, self.app_instance, force=force)
+
+                if result:
+                    return jsonify({
+                        'success': True,
+                        'message': 'Selfie sent successfully'
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': 'No selfie available or already sent today'
+                    }), 400
+
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/selfie/reset', methods=['POST'])
+        @require_auth
+        def reset_selfie_tracking():
+            """Reset selfie tracking for a companion or all companions."""
+            try:
+                from selfie_sender import load_selfie_tracking, save_selfie_tracking
+
+                data = request.get_json()
+                tracking = load_selfie_tracking()
+
+                if data and 'companion_id' in data:
+                    # Reset specific companion
+                    companion_id = data['companion_id']
+                    if companion_id in tracking.get('sent_selfies', {}):
+                        tracking['sent_selfies'][companion_id] = []
+                    if companion_id in tracking.get('last_sent_date', {}):
+                        del tracking['last_sent_date'][companion_id]
+
+                    save_selfie_tracking(tracking)
+                    return jsonify({
+                        'success': True,
+                        'message': f'Selfie tracking reset for {companion_id}'
+                    })
+                else:
+                    # Reset all tracking
+                    tracking = {
+                        'sent_selfies': {},
+                        'last_sent_date': {}
+                    }
+                    save_selfie_tracking(tracking)
+                    return jsonify({
+                        'success': True,
+                        'message': 'All selfie tracking reset'
+                    })
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/selfie/folders', methods=['GET'])
+        @require_auth
+        def get_selfie_folders():
+            """Get all available selfie folders and their contents."""
+            try:
+                from selfie_sender import find_selfie_folders, load_selfie_tracking
+
+                selfie_folders = find_selfie_folders()
+                tracking = load_selfie_tracking()
+
+                folders_info = []
+                for char_name, folder_path in selfie_folders.items():
+                    # Count images in each subfolder
+                    subfolders = {}
+                    total_images = 0
+
+                    for subfolder in folder_path.iterdir():
+                        if subfolder.is_dir():
+                            image_count = len([
+                                f for f in subfolder.iterdir()
+                                if f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp', '.gif')
+                            ])
+                            subfolders[subfolder.name] = image_count
+                            total_images += image_count
+
+                    folders_info.append({
+                        'character_name': char_name,
+                        'folder_path': str(folder_path),
+                        'subfolders': subfolders,
+                        'total_images': total_images
+                    })
+
+                return jsonify({
+                    'success': True,
+                    'folders': folders_info
+                })
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500
 
