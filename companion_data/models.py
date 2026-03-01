@@ -125,19 +125,36 @@ class Message:
     role: str  # "user" or "assistant"
     content: str
     timestamp: str
+    image_base64: Optional[str] = None  # Base64 encoded image data
+    image_mime_type: Optional[str] = None  # e.g., "image/jpeg"
+    image_name: Optional[str] = None  # Original image filename
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for saving."""
-        return {
+        result = {
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
         }
+        # Only include image fields if they exist
+        if self.image_base64:
+            result["image_base64"] = self.image_base64
+            result["image_mime_type"] = self.image_mime_type
+            if self.image_name:
+                result["image_name"] = self.image_name
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict) -> "Message":
         """Create from dictionary."""
-        return cls(**data)
+        return cls(
+            role=data.get("role", "assistant"),
+            content=data.get("content", ""),
+            timestamp=data.get("timestamp", ""),
+            image_base64=data.get("image_base64"),
+            image_mime_type=data.get("image_mime_type"),
+            image_name=data.get("image_name")
+        )
 
 
 @dataclass
@@ -148,9 +165,18 @@ class Conversation:
     created_at: str = ""
     last_updated: str = ""
 
-    def add_message(self, role: str, content: str, timestamp: str):
+    def add_message(self, role: str, content: str, timestamp: str,
+                    image_base64: str = None, image_mime_type: str = None,
+                    image_name: str = None):
         """Add a message to the conversation."""
-        self.messages.append(Message(role, content, timestamp))
+        self.messages.append(Message(
+            role=role,
+            content=content,
+            timestamp=timestamp,
+            image_base64=image_base64,
+            image_mime_type=image_mime_type,
+            image_name=image_name
+        ))
         self.last_updated = timestamp
 
     def get_context_messages(self, max_messages: int = 20) -> List[Dict]:

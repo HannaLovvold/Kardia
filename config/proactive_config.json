@@ -1,0 +1,107 @@
+{
+  "enabled": true,
+  "global_frequency": 3,
+  "time_window": {
+    "start": "09:00",
+    "end": "22:00"
+  },
+  "companion_settings": {
+    "david": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "alex": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "marcus": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "elena": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "kai": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "jordan": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "sarah": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "maya": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "luna": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "sam": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "tyler": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "chloe": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "custom_sarah_2889b66c": {
+      "today_messages": 1,
+      "last_date": "2026-02-19"
+    },
+    "custom_sarah_4b169760": {
+      "today_messages": 4,
+      "last_date": "2026-02-28",
+      "daily_limit": 4
+    },
+    "custom_chloe_3649ce51": {
+      "today_messages": 3,
+      "last_date": "2026-02-28",
+      "daily_limit": 3
+    },
+    "custom_luna_113d993c": {
+      "today_messages": 2,
+      "last_date": "2026-02-28",
+      "daily_limit": 2
+    },
+    "custom_maya_0d0a990a": {
+      "today_messages": 3,
+      "last_date": "2026-02-28",
+      "daily_limit": 3
+    },
+    "custom_elena_aea29f1e": {
+      "today_messages": 4,
+      "last_date": "2026-02-28",
+      "daily_limit": 4
+    }
+  },
+  "last_messages": {
+    "david": "2026-02-19T16:12:27.931810",
+    "alex": "2026-02-19T16:12:27.931810",
+    "marcus": "2026-02-19T16:12:27.931810",
+    "elena": "2026-02-19T16:12:27.931810",
+    "kai": "2026-02-19T16:12:27.931810",
+    "jordan": "2026-02-19T16:12:27.931810",
+    "sarah": "2026-02-19T16:12:27.931810",
+    "maya": "2026-02-19T16:12:27.931810",
+    "luna": "2026-02-19T16:12:27.931810",
+    "sam": "2026-02-19T16:12:27.931810",
+    "tyler": "2026-02-19T16:12:27.931810",
+    "chloe": "2026-02-19T16:12:27.931810",
+    "custom_sarah_2889b66c": "2026-02-19T16:12:27.931810",
+    "custom_sarah_4b169760": "2026-02-28T17:17:24.483632",
+    "custom_chloe_3649ce51": "2026-02-28T15:06:24.403823",
+    "custom_luna_113d993c": "2026-02-28T13:22:24.345688",
+    "custom_maya_0d0a990a": "2026-02-28T15:42:24.425419",
+    "custom_elena_aea29f1e": "2026-02-28T17:10:24.478552"
+  }
+}
